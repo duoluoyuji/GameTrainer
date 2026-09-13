@@ -1,0 +1,20 @@
+﻿## Build and output directories
+[Bb]in/
+[Oo]bj/
+[Oo]ut/
+outputs/
+cache/
+修改器/
+launch.log
+*.user
+*.userosscache
+*.suo
+*.userprefs
+.vs/
+.vscode/
+
+## IDE and Temp
+.idea/
+*.DotSettings.user
+*.tmp
+*.log

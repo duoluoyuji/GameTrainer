@@ -1,0 +1,520 @@
+<Window x:Class="GameTrainer.Views.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.inkore.net/lib/ui/wpf/modern"
+        xmlns:converters="clr-namespace:GameTrainer.Converters"
+        xmlns:controls="clr-namespace:GameTrainer.Controls"
+        Title="游戏修改器"
+        Width="1160" Height="760"
+        MinWidth="960" MinHeight="600"
+        WindowStartupLocation="CenterScreen"
+        Background="#0D0D11"
+        Foreground="#E0E0E0"
+        FontFamily="Microsoft YaHei UI, Segoe UI">
+
+    <Window.Resources>
+        <converters:InvertedBoolToVisibilityConverter x:Key="InvertedBoolToVisibilityConverter" />
+        <converters:BoolInvertConverter x:Key="BoolInvertConverter" />
+
+        <!-- 分类切换按钮样式 -->
+        <Style x:Key="CategoryRadioButton" TargetType="RadioButton">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="#90909A"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Padding" Value="18,8"/>
+            <Setter Property="Margin" Value="0,0,8,0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RadioButton">
+                        <Border x:Name="border" Background="{TemplateBinding Background}" CornerRadius="8" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#1AFFFFFF"/>
+                                <Setter Property="Foreground" Value="#FFFFFF"/>
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#253549"/>
+                                <Setter Property="Foreground" Value="#64B5F6"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 视图切换小按钮样式 -->
+        <Style x:Key="ViewModeToggleBtn" TargetType="RadioButton">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="#888899"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Padding" Value="10,5"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RadioButton">
+                        <Border x:Name="border" Background="{TemplateBinding Background}" CornerRadius="6" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#1E1E28"/>
+                                <Setter Property="Foreground" Value="#FFFFFF"/>
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#2D3A4B"/>
+                                <Setter Property="Foreground" Value="#90CAF9"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <!-- 顶部操作栏 -->
+            <RowDefinition Height="Auto"/>
+            <!-- 导航分类栏 -->
+            <RowDefinition Height="Auto"/>
+            <!-- 主内容区 -->
+            <RowDefinition Height="*"/>
+            <!-- 底部状态栏 -->
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- 1. 顶部操作栏 -->
+        <Border Grid.Row="0" Background="#131318" BorderBrush="#1F1F26" BorderThickness="0,0,0,1" Padding="24,14">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- 左侧：标题 -->
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="⚡" FontSize="20" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                    <TextBlock Text="游戏修改器" FontSize="18" FontWeight="Bold" Foreground="#FFFFFF" VerticalAlignment="Center"/>
+                </StackPanel>
+
+                <!-- 中间：全局搜索框 -->
+                <Border Grid.Column="1" HorizontalAlignment="Center" Width="460" Background="#1A1A22" CornerRadius="8" BorderBrush="#2C2C38" BorderThickness="1" Padding="12,4">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="🔍" FontSize="13" VerticalAlignment="Center" Margin="0,0,8,0" Foreground="#888899"/>
+                        <TextBox Grid.Column="1" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged, Delay=200}"
+                                 Background="Transparent" BorderThickness="0" Foreground="#FFFFFF" FontSize="13"
+                                 VerticalContentAlignment="Center" CaretBrush="#64B5F6"
+                                 KeyDown="SearchTextBox_KeyDown"/>
+                        <TextBlock Grid.Column="1" Text="搜索修改器（输入游戏名即搜，支持中英文）..." FontSize="13" Foreground="#666675"
+                                   VerticalAlignment="Center" IsHitTestVisible="False">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding SearchText}" Value="">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding SearchText}" Value="{x:Null}">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                        <!-- 一键清空按钮 -->
+                        <Button Grid.Column="2" Command="{Binding ClearSearchCommand}"
+                                Background="Transparent" BorderThickness="0" Cursor="Hand"
+                                Padding="6,2" VerticalAlignment="Center" ToolTip="清空搜索">
+                            <TextBlock Text="✕" FontSize="12" Foreground="#888899"/>
+                            <Button.Style>
+                                <Style TargetType="Button">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding SearchText}" Value="">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding SearchText}" Value="{x:Null}">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                        </Button>
+                    </Grid>
+                </Border>
+
+                <!-- 右侧：快捷工具 -->
+                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button Content="🛡️ Defender 防误删加白" Padding="12,7" FontSize="12" Margin="0,0,8,0"
+                            Background="#182433" Foreground="#90CAF9" BorderBrush="#243447" BorderThickness="1"
+                            Command="{Binding AddDefenderExclusionCommand}"
+                            ToolTip="配置 Windows Defender 排除项，防止修改器被杀毒软件拦截"/>
+                    <Button Content="📂 打开存放目录" Padding="12,7" FontSize="12"
+                            Background="#1F1F27" Foreground="#CCCCCC" BorderBrush="#2E2E3C" BorderThickness="1"
+                            Command="{Binding OpenDownloadFolderCommand}"
+                            ToolTip="打开本地保存修改器的文件夹"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- 2. 导航分类栏与视图切换 -->
+        <Border Grid.Row="1" Background="#101014" BorderBrush="#1C1C22" BorderThickness="0,0,0,1" Padding="24,8">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- 左侧：分类 Tab -->
+                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                    <RadioButton Content="🔥 热门推荐" Style="{StaticResource CategoryRadioButton}"
+                                 GroupName="CategoryTabs"
+                                 IsChecked="{Binding IsHotTab, Mode=OneWay}"
+                                 Command="{Binding SelectSectionCommand}" CommandParameter="hot"/>
+                    <RadioButton Content="⚡ 最新发布" Style="{StaticResource CategoryRadioButton}"
+                                 GroupName="CategoryTabs"
+                                 IsChecked="{Binding IsNewTab, Mode=OneWay}"
+                                 Command="{Binding SelectSectionCommand}" CommandParameter="new"/>
+                    <RadioButton Content="📁 本地已下载" Style="{StaticResource CategoryRadioButton}"
+                                 GroupName="CategoryTabs"
+                                 IsChecked="{Binding IsDownloadedTab, Mode=OneWay}"
+                                 Command="{Binding SelectSectionCommand}" CommandParameter="downloaded"/>
+                </StackPanel>
+
+                <!-- 右侧：视图切换（卡片视图 / 纯列表视图） -->
+                <Border Grid.Column="1" Background="#181820" CornerRadius="8" Padding="4" BorderBrush="#262630" BorderThickness="1">
+                    <StackPanel Orientation="Horizontal">
+                        <RadioButton Content="🔲 卡片海报" Style="{StaticResource ViewModeToggleBtn}"
+                                     GroupName="ViewModeGroup"
+                                     IsChecked="{Binding IsCardView, Mode=OneWay}"
+                                     Command="{Binding SetViewModeCommand}" CommandParameter="card"/>
+                        <RadioButton Content="☰ 纯游戏名列表" Style="{StaticResource ViewModeToggleBtn}"
+                                     GroupName="ViewModeGroup"
+                                     IsChecked="{Binding IsListView, Mode=OneWay}"
+                                     Command="{Binding SetViewModeCommand}" CommandParameter="list"/>
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Border>
+
+        <!-- 3. 主内容区（双视图模式 + 抽屉详情） -->
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- 左侧：卡片列表与空状态 -->
+            <Grid Grid.Column="0">
+                <!-- 空结果提醒 -->
+                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center"
+                            Visibility="{Binding IsSearchResultEmpty, Converter={StaticResource BoolToVisibilityConverter}}">
+                    <TextBlock Text="🔍" FontSize="44" HorizontalAlignment="Center" Margin="0,0,0,12" Foreground="#666677"/>
+                    <TextBlock Text="暂无修改器数据" FontSize="16" FontWeight="SemiBold" Foreground="#CCCCCC" HorizontalAlignment="Center"/>
+                    <TextBlock Text="您可以切换上方分类，或在搜索框输入游戏名称进行检索"
+                               FontSize="12" Foreground="#777788" Margin="0,8,0,0" HorizontalAlignment="Center"/>
+                </StackPanel>
+
+                <!-- 模式 A：大卡片海报视图 -->
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="18"
+                              Visibility="{Binding IsListView, Converter={StaticResource InvertedBoolToVisibilityConverter}}">
+                    <ItemsControl ItemsSource="{Binding DisplayedTrainers}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Width="260" Margin="7" Background="#16161D" CornerRadius="10"
+                                        BorderBrush="#242430" BorderThickness="1" ClipToBounds="True">
+                                    <Grid>
+                                        <Grid.RowDefinitions>
+                                            <!-- 封面图 -->
+                                            <RowDefinition Height="114"/>
+                                            <!-- 信息与操作 -->
+                                            <RowDefinition Height="*"/>
+                                        </Grid.RowDefinitions>
+
+                                        <!-- 1. 游戏海报封面 -->
+                                        <Grid Grid.Row="0" Background="#1B222E">
+                                            <Border Background="#1C212B">
+                                                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                    <TextBlock Text="🎮" FontSize="26" HorizontalAlignment="Center" Opacity="0.4"/>
+                                                    <TextBlock Text="{Binding OriginalName}" FontSize="10" Foreground="#556677"
+                                                               MaxWidth="220" TextTrimming="CharacterEllipsis" Margin="0,4,0,0"/>
+                                                </StackPanel>
+                                            </Border>
+
+                                            <!-- 异步图片 -->
+                                            <controls:AsyncImage SourceUrl="{Binding CoverUrl}" Stretch="UniformToFill"/>
+
+                                            <!-- 顶部状态角标 -->
+                                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="8">
+                                                <Border Background="#1B5E20" CornerRadius="4" Padding="6,2" Margin="0,0,4,0"
+                                                        Visibility="{Binding IsDownloaded, Converter={StaticResource BoolToVisibilityConverter}}">
+                                                    <TextBlock Text="✅ 已就绪" FontSize="10" Foreground="#C8E6C9" FontWeight="Bold"/>
+                                                </Border>
+                                                <Border Background="#BF360C" CornerRadius="4" Padding="6,2"
+                                                        Visibility="{Binding IsHot, Converter={StaticResource BoolToVisibilityConverter}}">
+                                                    <TextBlock Text="🔥 热门" FontSize="10" Foreground="#FFE0B2" FontWeight="Bold"/>
+                                                </Border>
+                                            </StackPanel>
+                                        </Grid>
+
+                                        <!-- 2. 信息与操作 -->
+                                        <Grid Grid.Row="1" Margin="12">
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="Auto"/>
+                                            </Grid.RowDefinitions>
+
+                                            <!-- 游戏标题 -->
+                                            <StackPanel Grid.Row="0">
+                                                <TextBlock Text="{Binding GameName}" FontSize="14" FontWeight="Bold" Foreground="#FFFFFF"
+                                                           TextWrapping="Wrap" MaxHeight="40"/>
+                                                <TextBlock Text="{Binding OriginalName}" FontSize="11" Foreground="#7A7A88"
+                                                           TextTrimming="CharacterEllipsis" Margin="0,3,0,10"/>
+                                            </StackPanel>
+
+                                            <!-- 下载进度条 -->
+                                            <ProgressBar Grid.Row="1" Height="3" Margin="0,0,0,8"
+                                                         Value="{Binding DownloadProgress}" Maximum="100"
+                                                         Visibility="{Binding IsDownloading, Converter={StaticResource BoolToVisibilityConverter}}"
+                                                         Foreground="#00E676" Background="#242430"/>
+
+                                            <!-- 按钮栏 -->
+                                            <Grid Grid.Row="2">
+                                                <!-- 未下载状态：大下载按钮 + 详情 -->
+                                                <Grid Visibility="{Binding IsDownloaded, Converter={StaticResource InvertedBoolToVisibilityConverter}}">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <Button Grid.Column="0" Content="下载修改器" FontWeight="SemiBold" FontSize="12" Padding="0,7" Margin="0,0,6,0"
+                                                            Background="#1976D2" Foreground="#FFFFFF" BorderThickness="0"
+                                                            IsEnabled="{Binding IsDownloading, Converter={StaticResource BoolInvertConverter}}"
+                                                            Command="{Binding DataContext.DownloadCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                            CommandParameter="{Binding}"/>
+                                                    <Button Grid.Column="1" Content="热键详情" FontSize="12" Padding="10,7"
+                                                            Background="#22222C" Foreground="#D0D0DC" BorderBrush="#2F2F3D" BorderThickness="1"
+                                                            Command="{Binding DataContext.OpenTrainerDetailsCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                            CommandParameter="{Binding}"/>
+                                                </Grid>
+
+                                                <!-- 已下载状态：【打开修改器】+【删除】+【热键详情】 -->
+                                                <Grid Visibility="{Binding IsDownloaded, Converter={StaticResource BoolToVisibilityConverter}}">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <Button Grid.Column="0" Content="打开修改器" FontWeight="SemiBold" FontSize="12" Padding="0,7" Margin="0,0,4,0"
+                                                            Background="#2E7D32" Foreground="#FFFFFF" BorderThickness="0"
+                                                            Command="{Binding DataContext.LaunchTrainerCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                            CommandParameter="{Binding}"/>
+                                                    <Button Grid.Column="1" Content="删除" FontSize="12" Padding="8,7" Margin="0,0,4,0"
+                                                            Background="#3A1C1C" Foreground="#EF9A9A" BorderThickness="0"
+                                                            Command="{Binding DataContext.DeleteTrainerCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                            CommandParameter="{Binding}"
+                                                            ToolTip="从磁盘中彻底删除此修改器"/>
+                                                    <Button Grid.Column="2" Content="热键" FontSize="12" Padding="8,7"
+                                                            Background="#22222C" Foreground="#D0D0DC" BorderBrush="#2F2F3D" BorderThickness="1"
+                                                            Command="{Binding DataContext.OpenTrainerDetailsCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                            CommandParameter="{Binding}"/>
+                                                </Grid>
+                                            </Grid>
+                                        </Grid>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+
+                <!-- 模式 B：纯游戏名紧凑列表视图（用户勾选后呈现） -->
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="18"
+                              Visibility="{Binding IsListView, Converter={StaticResource BoolToVisibilityConverter}}">
+                    <ItemsControl ItemsSource="{Binding DisplayedTrainers}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Margin="0,0,0,6" Background="#16161D" CornerRadius="8" BorderBrush="#22222D" BorderThickness="1" Padding="14,10">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <!-- 图标/状态 -->
+                                        <TextBlock Grid.Column="0" Text="🎮" FontSize="18" VerticalAlignment="Center" Margin="0,0,12,0" Opacity="0.8"/>
+
+                                        <!-- 游戏名称 -->
+                                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="{Binding GameName}" FontSize="14" FontWeight="Bold" Foreground="#FFFFFF" VerticalAlignment="Center"/>
+                                                <Border Background="#1B5E20" CornerRadius="4" Padding="5,1" Margin="8,0,0,0" VerticalAlignment="Center"
+                                                        Visibility="{Binding IsDownloaded, Converter={StaticResource BoolToVisibilityConverter}}">
+                                                    <TextBlock Text="已就绪" FontSize="10" Foreground="#C8E6C9" FontWeight="Bold"/>
+                                                </Border>
+                                                <Border Background="#BF360C" CornerRadius="4" Padding="5,1" Margin="6,0,0,0" VerticalAlignment="Center"
+                                                        Visibility="{Binding IsHot, Converter={StaticResource BoolToVisibilityConverter}}">
+                                                    <TextBlock Text="热门" FontSize="10" Foreground="#FFE0B2" FontWeight="Bold"/>
+                                                </Border>
+                                            </StackPanel>
+                                            <TextBlock Text="{Binding OriginalName}" FontSize="11" Foreground="#7A7A88" Margin="0,2,0,0"/>
+                                        </StackPanel>
+
+                                        <!-- 右侧操作栏 -->
+                                        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                                            <!-- 未下载：下载 + 热键 -->
+                                            <Button Content="下载修改器" FontSize="12" Padding="14,6" Margin="0,0,8,0"
+                                                    Background="#1976D2" Foreground="#FFFFFF" BorderThickness="0"
+                                                    Visibility="{Binding IsDownloaded, Converter={StaticResource InvertedBoolToVisibilityConverter}}"
+                                                    IsEnabled="{Binding IsDownloading, Converter={StaticResource BoolInvertConverter}}"
+                                                    Command="{Binding DataContext.DownloadCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                    CommandParameter="{Binding}"/>
+
+                                            <!-- 已下载：打开 + 删除 -->
+                                            <Button Content="打开修改器" FontSize="12" FontWeight="Bold" Padding="14,6" Margin="0,0,6,0"
+                                                    Background="#2E7D32" Foreground="#FFFFFF" BorderThickness="0"
+                                                    Visibility="{Binding IsDownloaded, Converter={StaticResource BoolToVisibilityConverter}}"
+                                                    Command="{Binding DataContext.LaunchTrainerCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                    CommandParameter="{Binding}"/>
+                                            <Button Content="删除" FontSize="12" Padding="10,6" Margin="0,0,6,0"
+                                                    Background="#3A1C1C" Foreground="#EF9A9A" BorderThickness="0"
+                                                    Visibility="{Binding IsDownloaded, Converter={StaticResource BoolToVisibilityConverter}}"
+                                                    Command="{Binding DataContext.DeleteTrainerCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                    CommandParameter="{Binding}"/>
+
+                                            <Button Content="热键详情" FontSize="12" Padding="10,6"
+                                                    Background="#22222C" Foreground="#D0D0DC" BorderBrush="#2F2F3D" BorderThickness="1"
+                                                    Command="{Binding DataContext.OpenTrainerDetailsCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                    CommandParameter="{Binding}"/>
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </Grid>
+
+            <!-- 右侧：修改器详情抽屉 -->
+            <Border Grid.Column="1" Width="360" Background="#131319" BorderBrush="#22222E" BorderThickness="1,0,0,0"
+                    Visibility="{Binding IsDrawerOpen, Converter={StaticResource BoolToVisibilityConverter}}">
+                <Grid Margin="18">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- 抽屉顶部标题与关闭按钮 -->
+                    <Grid Grid.Row="0" Margin="0,0,0,16">
+                        <TextBlock Text="修改器详情" FontSize="16" FontWeight="Bold" Foreground="#FFFFFF" VerticalAlignment="Center"/>
+                        <Button Content="✕" HorizontalAlignment="Right" Background="Transparent" Foreground="#888888" BorderThickness="0"
+                                FontSize="14" Padding="6" Command="{Binding CloseDrawerCommand}"/>
+                    </Grid>
+
+                    <!-- 游戏基础信息 -->
+                    <Border Grid.Row="1" Background="#1A1A22" CornerRadius="8" Padding="12" Margin="0,0,0,14">
+                        <StackPanel>
+                            <TextBlock Text="{Binding SelectedTrainer.GameName}" FontSize="15" FontWeight="Bold" Foreground="#FFFFFF" TextWrapping="Wrap"/>
+                            <TextBlock Text="{Binding SelectedTrainer.OriginalName}" FontSize="12" Foreground="#888899" Margin="0,2,0,8"/>
+                            <TextBlock Text="{Binding SelectedTrainer.LocalPath}" FontSize="11" Foreground="#66BB6A" TextWrapping="Wrap"
+                                       Visibility="{Binding SelectedTrainer.IsDownloaded, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                            <TextBlock Text="未下载（下载后可直接提取查看按键清单）" FontSize="11" Foreground="#FFA726"
+                                       Visibility="{Binding SelectedTrainer.IsDownloaded, Converter={StaticResource InvertedBoolToVisibilityConverter}}"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 作弊热键清单 -->
+                    <Grid Grid.Row="2">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <TextBlock Grid.Row="0" Text="📋 作弊功能与快捷键清单" FontSize="13" FontWeight="SemiBold" Foreground="#9090A0" Margin="0,0,0,8"/>
+
+                        <!-- 有热键列表时展示 -->
+                        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                            <ItemsControl ItemsSource="{Binding SelectedTrainer.Options}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Background="#1A1A24" CornerRadius="6" Padding="10,6" Margin="0,0,0,6">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <Border Background="#243447" CornerRadius="4" Padding="6,2" Margin="0,0,8,0">
+                                                    <TextBlock Text="{Binding DisplayKey}" FontSize="11" FontWeight="Bold" Foreground="#64B5F6"/>
+                                                </Border>
+                                                <TextBlock Grid.Column="1" Text="{Binding Description}" FontSize="12" Foreground="#E0E0E0" VerticalAlignment="Center"/>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+
+                        <!-- 无热键列表且未下载时的引导提示 -->
+                        <StackPanel Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                    Visibility="{Binding SelectedTrainer.IsDownloaded, Converter={StaticResource InvertedBoolToVisibilityConverter}}">
+                            <TextBlock Text="⚡" FontSize="36" HorizontalAlignment="Center" Margin="0,0,0,10"/>
+                            <TextBlock Text="点击下方「立即下载修改器」" FontSize="13" FontWeight="SemiBold" Foreground="#FFFFFF" HorizontalAlignment="Center"/>
+                            <TextBlock Text="下载完成后，软件将自动解析出该修改器支持的全部快捷键与作弊功能清单"
+                                       FontSize="11" Foreground="#888888" TextWrapping="Wrap" TextAlignment="Center" MaxWidth="240" Margin="0,6,0,0"/>
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- 抽屉底部快捷按钮 -->
+                    <StackPanel Grid.Row="3" Margin="0,14,0,0">
+                        <Button Content="打开运行修改器" Padding="0,10" FontWeight="Bold" FontSize="13"
+                                Background="#2E7D32" Foreground="#FFFFFF" BorderThickness="0" Margin="0,0,0,8"
+                                Visibility="{Binding SelectedTrainer.IsDownloaded, Converter={StaticResource BoolToVisibilityConverter}}"
+                                Command="{Binding LaunchTrainerCommand}" CommandParameter="{Binding SelectedTrainer}"/>
+
+                        <Button Content="立即下载修改器" Padding="0,10" FontWeight="Bold" FontSize="13"
+                                Background="#1976D2" Foreground="#FFFFFF" BorderThickness="0" Margin="0,0,0,8"
+                                Visibility="{Binding SelectedTrainer.IsDownloaded, Converter={StaticResource InvertedBoolToVisibilityConverter}}"
+                                IsEnabled="{Binding SelectedTrainer.IsDownloading, Converter={StaticResource BoolInvertConverter}}"
+                                Command="{Binding DownloadCommand}" CommandParameter="{Binding SelectedTrainer}"/>
+
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Button Grid.Column="0" Content="官网页面" Padding="0,6" FontSize="11" Margin="0,0,4,0"
+                                    Background="#1F1F28" Foreground="#AAAAAA" BorderThickness="0"
+                                    Command="{Binding OpenTrainerOfficialPageCommand}" CommandParameter="{Binding SelectedTrainer}"/>
+                            <Button Grid.Column="1" Content="删除修改器" Padding="0,6" FontSize="11" Margin="4,0,0,0"
+                                    Background="#3A1C1C" Foreground="#EF9A9A" BorderThickness="0"
+                                    Visibility="{Binding SelectedTrainer.IsDownloaded, Converter={StaticResource BoolToVisibilityConverter}}"
+                                    Command="{Binding DeleteTrainerCommand}" CommandParameter="{Binding SelectedTrainer}"/>
+                        </Grid>
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- 4. 底部状态栏 -->
+        <Border Grid.Row="3" Background="#121216" BorderBrush="#1C1C22" BorderThickness="0,1,0,0" Padding="20,6">
+            <TextBlock Text="{Binding StatusMessage}" FontSize="12" Foreground="#888899" VerticalAlignment="Center"/>
+        </Border>
+    </Grid>
+</Window>
