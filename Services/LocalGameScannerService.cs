@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -15,12 +15,14 @@ public class LocalGameScannerService
     private static readonly string[] IgnoredKeywords = new[]
     {
         "steamworks", "common redist", "wallpaper engine", "dedicated server", "soundtrack",
-        "artbook", "sdk", "toolkit", "benchmark", "playtest", "directx",
+        "artbook", "sdk", "toolkit", "benchmark", "playtest", "directx", "demo",
         "redistributable", "microsoft", "windows", "runtime", "package", "driver",
         "controller config", "steam controller", "visual c++", "framework", ".net",
         "google", "nvidia", "realtek", "intel", "python", "node.js", "git", "7-zip",
         "everything", "wps office", "telegram", "antigravity", "traework", "mumu",
-        "purpl", "wegame", "ubisoft connect", "steam", "riot vanguard", "anticheat"
+        "purpl", "wegame", "ubisoft connect", "steam", "riot vanguard", "anticheat",
+        "360", "baidu", "doubao", "nutstore", "gamepp", "netdisk", "accelerator",
+        "quark", "迅雷", "网盘", "输入法", "安全卫士", "杀毒", "管家", "控制台"
     };
 
     public Task<List<DetectedGame>> ScanAllGamesAsync()
@@ -32,8 +34,8 @@ public class LocalGameScannerService
             try { ScanSteam(result); } catch { }
             try { ScanEpic(result); } catch { }
             try { ScanGOG(result); } catch { }
-            try { ScanRegistry(result); } catch { }
-            try { ScanCommonFolders(result); } catch { }
+            try { ScanUbisoft(result); } catch { }
+            try { ScanCommonGameFolders(result); } catch { }
 
             return result.Values.OrderBy(x => x.Name).ToList();
         });
@@ -61,7 +63,7 @@ public class LocalGameScannerService
 
     private static bool IsIgnored(string name)
     {
-        var lower = name.ToLowerInvariant();
+        var lower = name.ToLowerInvariant().Replace('_', ' ').Replace('-', ' ');
         return IgnoredKeywords.Any(k => lower.Contains(k));
     }
 
@@ -71,6 +73,76 @@ public class LocalGameScannerService
         // 去除常见的结尾杂质，如 (Playtest), Soundtrack, Dedicated Server
         name = Regex.Replace(name, @"\s*(\((Playtest|Demo|Beta|Server)\)|Soundtrack|Dedicated Server|Original Soundtrack|Artbook)$", "", RegexOptions.IgnoreCase).Trim();
         return name;
+    }
+
+    /// <summary>
+    /// 严格校验目录是否为真实有效的单机游戏安装目录（必须存在可执行程序，且排除空目录、卸载器、崩溃收集器等杂质）
+    /// </summary>
+    public static bool IsValidGameDirectory(string? dirPath, out string? mainExePath)
+    {
+        mainExePath = null;
+        if (string.IsNullOrWhiteSpace(dirPath) || !Directory.Exists(dirPath))
+            return false;
+
+        try
+        {
+            var dir = new DirectoryInfo(dirPath);
+            // 目录如果没有任何文件和子目录，直接判定为假（彻底解决像 StellarBlade 这类 0 字节空目录误报问题）
+            if (!dir.EnumerateFileSystemInfos().Any())
+                return false;
+
+            var exeFiles = new List<FileInfo>();
+            try
+            {
+                exeFiles.AddRange(dir.EnumerateFiles("*.exe", SearchOption.TopDirectoryOnly));
+                foreach (var sub in dir.EnumerateDirectories().Take(8))
+                {
+                    try
+                    {
+                        exeFiles.AddRange(sub.EnumerateFiles("*.exe", SearchOption.TopDirectoryOnly));
+                        if (sub.Name.Equals("binaries", StringComparison.OrdinalIgnoreCase) ||
+                            sub.Name.Equals("game", StringComparison.OrdinalIgnoreCase))
+                        {
+                            foreach (var sub2 in sub.EnumerateDirectories().Take(5))
+                            {
+                                exeFiles.AddRange(sub2.EnumerateFiles("*.exe", SearchOption.TopDirectoryOnly));
+                            }
+                        }
+                    }
+                    catch { }
+                }
+            }
+            catch { }
+
+            if (exeFiles.Count == 0)
+                return false;
+
+            // 排除卸载器、崩溃报告、安装程序、反作弊等工具 exe
+            var gameExes = exeFiles.Where(f =>
+            {
+                var name = f.Name.ToLowerInvariant();
+                if (f.Length < 2 * 1024 * 1024)
+                    return false;
+
+                if (name.StartsWith("unins") || name.Contains("crash") || name.Contains("setup") ||
+                    name.Contains("redist") || name.Contains("vcredist") || name.Contains("dxsetup") ||
+                    name.Contains("report") || name.Contains("helper") || name.Contains("patch") ||
+                    name.Contains("anticheat") || name.Contains("battleye") || name.Contains("easyanticheat") ||
+                    name.Contains("install") || name.Contains("update"))
+                    return false;
+
+                return true;
+            }).OrderByDescending(f => f.Length).ToList();
+
+            if (gameExes.Count > 0)
+            {
+                mainExePath = gameExes[0].FullName;
+                return true;
+            }
+        }
+        catch { }
+
+        return false;
     }
 
     private void ScanSteam(Dictionary<string, DetectedGame> result)
@@ -136,11 +208,22 @@ public class LocalGameScannerService
                             var acfContent = File.ReadAllText(acf);
                             var nameMatch = Regex.Match(acfContent, @"""name""\s+""([^""]+)""");
                             var dirMatch = Regex.Match(acfContent, @"""installdir""\s+""([^""]+)""");
+                            var stateMatch = Regex.Match(acfContent, @"""StateFlags""\s+""([^""]+)""");
+
+                            // 校验 StateFlags（4 表示完全下载安装完毕）
+                            if (stateMatch.Success && stateMatch.Groups[1].Value != "4")
+                                continue;
+
                             if (nameMatch.Success)
                             {
                                 var gName = nameMatch.Groups[1].Value;
                                 var gDir = dirMatch.Success ? Path.Combine(steamApps, "common", dirMatch.Groups[1].Value) : "";
-                                AddGame(result, gName, gDir, "Steam");
+
+                                // 严格校验该目录是否真实存在有效游戏可执行文件
+                                if (IsValidGameDirectory(gDir, out var mainExe))
+                                {
+                                    AddGame(result, gName, gDir, "Steam");
+                                }
                             }
                         }
                         catch { }
@@ -148,7 +231,7 @@ public class LocalGameScannerService
                 }
                 catch { }
 
-                // 1.2 读取 common 目录下的各个游戏文件夹（补充扫描手动拷贝或识别不全的）
+                // 1.2 读取 common 目录下的各个游戏文件夹（补充扫描手动放置或未写清单的完整单机游戏）
                 var commonDir = Path.Combine(steamApps, "common");
                 if (Directory.Exists(commonDir))
                 {
@@ -156,8 +239,12 @@ public class LocalGameScannerService
                     {
                         foreach (var sub in Directory.GetDirectories(commonDir))
                         {
-                            var folderName = Path.GetFileName(sub);
-                            AddGame(result, folderName, sub, "Steam");
+                            // 空目录（如 0 字节残留文件夹）或无有效可执行文件的文件夹一律严加过滤，绝不采纳！
+                            if (IsValidGameDirectory(sub, out var mainExe))
+                            {
+                                var folderName = Path.GetFileName(sub);
+                                AddGame(result, folderName, sub, "Steam");
+                            }
                         }
                     }
                     catch { }
@@ -182,9 +269,9 @@ public class LocalGameScannerService
                 {
                     var name = dn.GetString();
                     var path = il.GetString();
-                    if (!string.IsNullOrEmpty(name))
+                    if (!string.IsNullOrEmpty(name) && IsValidGameDirectory(path, out _))
                     {
-                        AddGame(result, name, path ?? "", "Epic Games");
+                        AddGame(result, name, path!, "Epic Games");
                     }
                 }
             }
@@ -206,9 +293,9 @@ public class LocalGameScannerService
                     using var gKey = sub.OpenSubKey(gameSubKeyName);
                     var name = gKey?.GetValue("gameName")?.ToString();
                     var path = gKey?.GetValue("path")?.ToString();
-                    if (!string.IsNullOrEmpty(name))
+                    if (!string.IsNullOrEmpty(name) && IsValidGameDirectory(path, out _))
                     {
-                        AddGame(result, name, path ?? "", "GOG");
+                        AddGame(result, name, path!, "GOG");
                     }
                 }
             }
@@ -216,52 +303,31 @@ public class LocalGameScannerService
         }
     }
 
-    private void ScanRegistry(Dictionary<string, DetectedGame> result)
+    private void ScanUbisoft(Dictionary<string, DetectedGame> result)
     {
-        var uninstallKeys = new[]
-        {
-            (Registry.LocalMachine, @"Software\Microsoft\Windows\CurrentVersion\Uninstall"),
-            (Registry.LocalMachine, @"Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"),
-            (Registry.CurrentUser, @"Software\Microsoft\Windows\CurrentVersion\Uninstall")
-        };
-
-        foreach (var (root, path) in uninstallKeys)
+        var ubiKeys = new[] { @"Software\Ubisoft\Launcher\Installs", @"Software\WOW6432Node\Ubisoft\Launcher\Installs" };
+        foreach (var k in ubiKeys)
         {
             try
             {
-                using var key = root.OpenSubKey(path);
-                if (key == null) continue;
-
-                foreach (var subName in key.GetSubKeyNames())
+                using var sub = Registry.LocalMachine.OpenSubKey(k);
+                if (sub == null) continue;
+                foreach (var gameId in sub.GetSubKeyNames())
                 {
-                    try
+                    using var gKey = sub.OpenSubKey(gameId);
+                    var path = gKey?.GetValue("InstallDir")?.ToString();
+                    if (!string.IsNullOrEmpty(path) && IsValidGameDirectory(path, out _))
                     {
-                        using var sub = key.OpenSubKey(subName);
-                        if (sub == null) continue;
-
-                        var sysComp = sub.GetValue("SystemComponent");
-                        if (sysComp is int sysInt && sysInt == 1) continue;
-
-                        var name = sub.GetValue("DisplayName")?.ToString();
-                        var installLoc = sub.GetValue("InstallLocation")?.ToString();
-
-                        if (!string.IsNullOrEmpty(name))
-                        {
-                            // 仅当安装目录中存在可执行文件且非系统组件时
-                            if (!string.IsNullOrEmpty(installLoc) && Directory.Exists(installLoc))
-                            {
-                                AddGame(result, name, installLoc, "Windows");
-                            }
-                        }
+                        var folderName = Path.GetFileName(path.TrimEnd('\\', '/'));
+                        AddGame(result, folderName, path, "Ubisoft");
                     }
-                    catch { }
                 }
             }
             catch { }
         }
     }
 
-    private void ScanCommonFolders(Dictionary<string, DetectedGame> result)
+    private void ScanCommonGameFolders(Dictionary<string, DetectedGame> result)
     {
         foreach (var drive in DriveInfo.GetDrives())
         {
@@ -271,8 +337,7 @@ public class LocalGameScannerService
             {
                 Path.Combine(drive.RootDirectory.FullName, "Games"),
                 Path.Combine(drive.RootDirectory.FullName, "Game"),
-                Path.Combine(drive.RootDirectory.FullName, "单机游戏"),
-                Path.Combine(drive.RootDirectory.FullName, "SteamLibrary", "steamapps", "common")
+                Path.Combine(drive.RootDirectory.FullName, "单机游戏")
             };
 
             foreach (var cand in candidates)
@@ -283,12 +348,11 @@ public class LocalGameScannerService
                     {
                         foreach (var sub in Directory.GetDirectories(cand))
                         {
-                            var folderName = Path.GetFileName(sub);
-                            // 确认目录下包含可执行文件
-                            if (Directory.GetFiles(sub, "*.exe", SearchOption.TopDirectoryOnly).Any() ||
-                                Directory.GetFiles(sub, "*.exe", SearchOption.AllDirectories).Take(1).Any())
+                            // 严密校验是否包含真实单机游戏可执行程序
+                            if (IsValidGameDirectory(sub, out _))
                             {
-                                AddGame(result, folderName, sub, "本地目录");
+                                var folderName = Path.GetFileName(sub);
+                                AddGame(result, folderName, sub, "本地磁盘");
                             }
                         }
                     }
