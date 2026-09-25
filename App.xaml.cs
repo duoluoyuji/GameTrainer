@@ -43,6 +43,7 @@ public partial class App : Application
         services.AddSingleton<FlingScraperService>();
         services.AddSingleton<TrainerDownloadService>();
         services.AddSingleton<TrainerDataService>();
+        services.AddSingleton<LocalGameScannerService>();
 
         services.AddSingleton<MainViewModel>();
         services.AddSingleton<MainWindow>();

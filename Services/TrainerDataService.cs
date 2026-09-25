@@ -8,6 +8,8 @@ public class TrainerDataService
 {
     private readonly FlingScraperService _scraper;
     private readonly List<TrainerItem> _allTrainers = new();
+    private readonly HashSet<string> _builtinUrls = new(StringComparer.OrdinalIgnoreCase);
+    private readonly List<TrainerItem> _userDiscoveredTrainers = new();
     private readonly object _lock = new();
 
     private TrainerSettings _settings = new();
@@ -94,6 +96,11 @@ public class TrainerDataService
                             }
                         }
 
+                        if (!string.IsNullOrEmpty(page))
+                        {
+                            _builtinUrls.Add(page);
+                        }
+
                         _allTrainers.Add(new TrainerItem
                         {
                             GameName = zh,
@@ -107,6 +114,29 @@ public class TrainerDataService
                 }
                 catch { }
             }
+
+            // 载入用户在线探针增量发现的新修改器
+            try
+            {
+                var userTrainersPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "cache", "user_trainers.json");
+                if (File.Exists(userTrainersPath))
+                {
+                    var userJson = File.ReadAllText(userTrainersPath);
+                    var userList = JsonSerializer.Deserialize<List<TrainerItem>>(userJson);
+                    if (userList != null)
+                    {
+                        foreach (var item in userList)
+                        {
+                            MergeOrAdd(item, saveToDisk: false);
+                            if (!_userDiscoveredTrainers.Any(x => x.PageUrl.Equals(item.PageUrl, StringComparison.OrdinalIgnoreCase)))
+                            {
+                                _userDiscoveredTrainers.Add(item);
+                            }
+                        }
+                    }
+                }
+            }
+            catch { }
 
             SyncDownloadedState(_allTrainers);
             return _allTrainers.ToList();
@@ -282,13 +312,6 @@ public class TrainerDataService
                         {
                             item.CoverUrl = matched.CoverUrl;
                             item.IsHot = matched.IsHot;
-                        }
-
-                        // 解析其快捷键
-                        var (_, options) = TrainerExeParser.Parse(exePath);
-                        if (options.Count > 0)
-                        {
-                            item.Options = new System.Collections.ObjectModel.ObservableCollection<CheatOption>(options);
                         }
 
                         list.Add(item);
@@ -485,28 +508,138 @@ public class TrainerDataService
         }
     }
 
-    private TrainerItem MergeOrAdd(TrainerItem item)
+    /// <summary>为检测到的本地游戏智能匹配对应的修改器</summary>
+    public TrainerItem? FindTrainerForDetectedGame(string gameTitle, string? installPath = null)
     {
-        var existing = _allTrainers.FirstOrDefault(t =>
-            (!string.IsNullOrEmpty(item.PageUrl) && t.PageUrl.Equals(item.PageUrl, StringComparison.OrdinalIgnoreCase)) ||
-            (!string.IsNullOrEmpty(item.OriginalName) && t.OriginalName.Equals(item.OriginalName, StringComparison.OrdinalIgnoreCase)));
+        if (string.IsNullOrWhiteSpace(gameTitle)) return null;
 
-        if (existing != null)
+        var clean = gameTitle.Trim();
+        var norm = NormalizeName(clean);
+
+        lock (_lock)
         {
-            if (item.IsHot) existing.IsHot = true;
-            if (item.IsNew) existing.IsNew = true;
-            // 只有当现有条目完全没有封面时，才采纳在线拉取到的封面；若已有官方封面绝不替换
-            if (string.IsNullOrEmpty(existing.CoverUrl) && !string.IsNullOrEmpty(item.CoverUrl))
+            // 1. 中英文完全匹配或别名完全匹配
+            var exact = _allTrainers.FirstOrDefault(t =>
+                t.OriginalName.Equals(clean, StringComparison.OrdinalIgnoreCase) ||
+                t.GameName.Equals(clean, StringComparison.OrdinalIgnoreCase) ||
+                t.Aliases.Any(a => a.Equals(clean, StringComparison.OrdinalIgnoreCase)));
+            if (exact != null) return exact;
+
+            // 2. 标点与大小写归一化后匹配 (如 "stellarblade" == "stellar blade")
+            if (!string.IsNullOrEmpty(norm))
             {
-                existing.CoverUrl = item.CoverUrl;
+                var normMatch = _allTrainers.FirstOrDefault(t =>
+                    NormalizeName(t.OriginalName) == norm ||
+                    NormalizeName(t.GameName) == norm ||
+                    t.Aliases.Any(a => NormalizeName(a) == norm));
+                if (normMatch != null) return normMatch;
             }
-            return existing;
+
+            // 3. 前缀与包含匹配（针对安装目录如 "CONTROL Resonant" 匹配 "Control", "OnimushaWotS" 匹配 "Onimusha"）
+            if (norm.Length >= 4)
+            {
+                var prefixMatch = _allTrainers.FirstOrDefault(t =>
+                {
+                    var tEnNorm = NormalizeName(t.OriginalName);
+                    return (!string.IsNullOrEmpty(tEnNorm) && tEnNorm.Length >= 4 && (norm.StartsWith(tEnNorm) || tEnNorm.StartsWith(norm))) ||
+                           t.Aliases.Any(a => { var an = NormalizeName(a); return an.Length >= 4 && (norm.StartsWith(an) || an.StartsWith(norm)); });
+                });
+                if (prefixMatch != null) return prefixMatch;
+
+                var subMatch = _allTrainers.FirstOrDefault(t =>
+                {
+                    var tEnNorm = NormalizeName(t.OriginalName);
+                    return (!string.IsNullOrEmpty(tEnNorm) && tEnNorm.Length >= 4 && norm.Contains(tEnNorm)) ||
+                           t.Aliases.Any(a => { var an = NormalizeName(a); return an.Length >= 4 && norm.Contains(an); });
+                });
+                if (subMatch != null) return subMatch;
+            }
+
+            // 4. 如果有安装路径，也可以检查目录名称
+            if (!string.IsNullOrEmpty(installPath))
+            {
+                var folder = Path.GetFileName(installPath.TrimEnd('\\', '/'));
+                if (!string.IsNullOrEmpty(folder) && !folder.Equals(gameTitle, StringComparison.OrdinalIgnoreCase))
+                {
+                    var fNorm = NormalizeName(folder);
+                    if (fNorm.Length >= 4)
+                    {
+                        var folderMatch = _allTrainers.FirstOrDefault(t =>
+                        {
+                            var tEnNorm = NormalizeName(t.OriginalName);
+                            return (!string.IsNullOrEmpty(tEnNorm) && tEnNorm.Length >= 4 && (fNorm.Contains(tEnNorm) || tEnNorm.Contains(fNorm)));
+                        });
+                        if (folderMatch != null) return folderMatch;
+                    }
+                }
+            }
+
+            return null;
         }
-        else
+    }
+
+    public TrainerItem MergeOrAdd(TrainerItem item, bool saveToDisk = true)
+    {
+        TrainerItem result;
+        bool isNewAddition = false;
+
+        lock (_lock)
         {
-            _allTrainers.Insert(0, item);
-            return item;
+            var existing = _allTrainers.FirstOrDefault(t =>
+                (!string.IsNullOrEmpty(item.PageUrl) && t.PageUrl.Equals(item.PageUrl, StringComparison.OrdinalIgnoreCase)) ||
+                (!string.IsNullOrEmpty(item.OriginalName) && t.OriginalName.Equals(item.OriginalName, StringComparison.OrdinalIgnoreCase)));
+
+            if (existing != null)
+            {
+                if (item.IsHot) existing.IsHot = true;
+                if (item.IsNew) existing.IsNew = true;
+                // 只有当现有条目完全没有封面时，才采纳在线拉取到的封面；若已有官方封面绝不替换
+                if (string.IsNullOrEmpty(existing.CoverUrl) && !string.IsNullOrEmpty(item.CoverUrl))
+                {
+                    existing.CoverUrl = item.CoverUrl;
+                }
+                result = existing;
+            }
+            else
+            {
+                _allTrainers.Insert(0, item);
+                result = item;
+                if (!string.IsNullOrEmpty(item.PageUrl) && !_builtinUrls.Contains(item.PageUrl))
+                {
+                    if (!_userDiscoveredTrainers.Any(x => x.PageUrl.Equals(item.PageUrl, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        _userDiscoveredTrainers.Insert(0, item);
+                    }
+                    isNewAddition = true;
+                }
+            }
         }
+
+        if (isNewAddition && saveToDisk)
+        {
+            SaveUserTrainers();
+        }
+
+        return result;
+    }
+
+    private void SaveUserTrainers()
+    {
+        try
+        {
+            var cacheDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "cache");
+            Directory.CreateDirectory(cacheDir);
+            var filePath = Path.Combine(cacheDir, "user_trainers.json");
+
+            List<TrainerItem> toSave;
+            lock (_lock)
+            {
+                toSave = _userDiscoveredTrainers.ToList();
+            }
+            var json = JsonSerializer.Serialize(toSave, new JsonSerializerOptions { WriteIndented = true });
+            File.WriteAllText(filePath, json);
+        }
+        catch { }
     }
 
     private static string NormalizeName(string name)

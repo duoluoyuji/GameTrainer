@@ -46,6 +46,12 @@ public partial class TrainerItem : ObservableObject
     private bool _isSelected;
 
     [ObservableProperty]
+    private bool _isLocalInstalled;
+
+    [ObservableProperty]
+    private string _installedGamePath = string.Empty;
+
+    [ObservableProperty]
     private ObservableCollection<CheatOption> _options = new();
 
     public List<string> Aliases { get; set; } = new();

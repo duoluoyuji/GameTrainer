@@ -15,6 +15,7 @@ public partial class MainViewModel : ObservableObject
     private readonly TrainerDataService _dataService;
     private readonly TrainerDownloadService _downloadService;
     private readonly FlingScraperService _scraper;
+    private readonly LocalGameScannerService _scannerService;
 
     private readonly DispatcherTimer _searchDebounceTimer;
     private DispatcherTimer? _statusTimer;
@@ -24,7 +25,7 @@ public partial class MainViewModel : ObservableObject
     private string _searchText = string.Empty;
 
     [ObservableProperty]
-    private string _currentSection = "hot"; // hot, new, downloaded, search
+    private string _currentSection = "local"; // local, hot, new, downloaded, search
 
     [ObservableProperty]
     private string _statusMessage = string.Empty;
@@ -33,32 +34,48 @@ public partial class MainViewModel : ObservableObject
     private bool _isBusy;
 
     [ObservableProperty]
-    private bool _isDrawerOpen;
-
-    [ObservableProperty]
     private bool _isSearchResultEmpty;
 
     [ObservableProperty]
     private bool _isListView;
 
     [ObservableProperty]
-    private TrainerItem? _selectedTrainer;
+    private int _installedGamesCount;
+
+    [ObservableProperty]
+    private bool _isScanningLocalGames;
+
+    [ObservableProperty]
+    private string _scanProgressMessage = string.Empty;
+
+    [ObservableProperty]
+    private bool _hasUnmatchedGames;
+
+    [ObservableProperty]
+    private bool _isUnmatchedExpanded;
+
+    [ObservableProperty]
+    private ObservableCollection<DetectedGame> _unmatchedGameItems = new();
 
     [ObservableProperty]
     private ObservableCollection<TrainerItem> _displayedTrainers = new();
 
     private List<TrainerItem> _allLocalList = new();
+    private List<TrainerItem> _localList = new();
     private List<TrainerItem> _hotList = new();
     private List<TrainerItem> _newList = new();
+    private List<DetectedGame> _unmatchedGames = new();
 
     public MainViewModel(
         TrainerDataService dataService,
         TrainerDownloadService downloadService,
-        FlingScraperService scraper)
+        FlingScraperService scraper,
+        LocalGameScannerService scannerService)
     {
         _dataService = dataService;
         _downloadService = downloadService;
         _scraper = scraper;
+        _scannerService = scannerService;
 
         _isListView = _dataService.Settings.IsListView;
 
@@ -72,16 +89,25 @@ public partial class MainViewModel : ObservableObject
         InitializeData();
     }
 
+    public bool IsLocalTab => CurrentSection == "local";
     public bool IsHotTab => CurrentSection == "hot";
     public bool IsNewTab => CurrentSection == "new";
     public bool IsDownloadedTab => CurrentSection == "downloaded";
     public bool IsCardView => !IsListView;
+    public bool ShowUnmatchedSection => IsLocalTab && HasUnmatchedGames;
 
     partial void OnCurrentSectionChanged(string value)
     {
+        OnPropertyChanged(nameof(IsLocalTab));
         OnPropertyChanged(nameof(IsHotTab));
         OnPropertyChanged(nameof(IsNewTab));
         OnPropertyChanged(nameof(IsDownloadedTab));
+        OnPropertyChanged(nameof(ShowUnmatchedSection));
+    }
+
+    partial void OnHasUnmatchedGamesChanged(bool value)
+    {
+        OnPropertyChanged(nameof(ShowUnmatchedSection));
     }
 
     partial void OnIsListViewChanged(bool value)
@@ -139,15 +165,19 @@ public partial class MainViewModel : ObservableObject
 
     private void InitializeData()
     {
-        // 1. 本地极速秒开（只载入热门推荐，避免卡顿）
+        // 1. 本地极速秒开（载入基础离线库）
         _allLocalList = _dataService.LoadBuiltinData();
         _hotList = _allLocalList.Where(x => x.IsHot).Take(40).ToList();
         _newList = _allLocalList.Take(30).ToList();
 
-        CurrentSection = "hot";
+        // 默认首先展示本机游戏分类
+        CurrentSection = "local";
         UpdateDisplayedList();
 
-        // 2. 后台异步同步官网最新海报与更新（断网不报错、不卡界面）
+        // 2. 自动启动本机已安装游戏探测与在线智能探针
+        _ = ScanLocalGamesAsync();
+
+        // 3. 后台异步同步官网最新海报与更新（断网不报错、不卡界面）
         _ = Task.Run(async () =>
         {
             try
@@ -165,7 +195,7 @@ public partial class MainViewModel : ObservableObject
                         _newList = onlineNewest;
                     }
 
-                    // 只有用户当前正停留在热门或最新时才温和刷新，绝不篡改已下载视图
+                    // 只有用户当前正停留在热门或最新时才温和刷新，绝不篡改其他视图
                     if (CurrentSection is "hot" or "new")
                     {
                         UpdateDisplayedList();
@@ -295,6 +325,10 @@ public partial class MainViewModel : ObservableObject
         List<TrainerItem> target;
         switch (CurrentSection)
         {
+            case "local":
+                target = _localList;
+                _dataService.SyncDownloadedState(target);
+                break;
             case "hot":
                 target = _hotList;
                 _dataService.SyncDownloadedState(target);
@@ -309,7 +343,7 @@ public partial class MainViewModel : ObservableObject
             case "search":
                 return;
             default:
-                target = _hotList;
+                target = _localList.Count > 0 ? _localList : _hotList;
                 _dataService.SyncDownloadedState(target);
                 break;
         }
@@ -319,25 +353,149 @@ public partial class MainViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void OpenTrainerDetails(TrainerItem item)
+    private void ToggleUnmatchedExpanded()
     {
-        if (item == null) return;
-        SelectedTrainer = item;
-
-        // 如果已下载，自动解析其快捷键清单
-        if (item.IsDownloaded && !string.IsNullOrEmpty(item.LocalPath) && File.Exists(item.LocalPath))
-        {
-            var (_, options) = TrainerExeParser.Parse(item.LocalPath);
-            item.Options = new ObservableCollection<CheatOption>(options);
-        }
-
-        IsDrawerOpen = true;
+        IsUnmatchedExpanded = !IsUnmatchedExpanded;
     }
 
     [RelayCommand]
-    private void CloseDrawer()
+    private async Task RescanLocalGamesAsync()
     {
-        IsDrawerOpen = false;
+        await ScanLocalGamesAsync();
+    }
+
+    public async Task ScanLocalGamesAsync()
+    {
+        IsScanningLocalGames = true;
+        ScanProgressMessage = "正在全盘扫描 Steam / Epic / GOG 与本地已安装游戏...";
+
+        try
+        {
+            var detected = await _scannerService.ScanAllGamesAsync();
+
+            var matchedTrainers = new List<TrainerItem>();
+            var unmatched = new List<DetectedGame>();
+            var seenUrls = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            // Phase 1: 毫秒级离线快速对齐
+            foreach (var game in detected)
+            {
+                var trainer = _dataService.FindTrainerForDetectedGame(game.Name, game.InstallPath);
+                if (trainer != null)
+                {
+                    trainer.IsLocalInstalled = true;
+                    if (!string.IsNullOrEmpty(game.InstallPath))
+                    {
+                        trainer.InstalledGamePath = game.InstallPath;
+                    }
+                    if (seenUrls.Add(trainer.PageUrl))
+                    {
+                        matchedTrainers.Add(trainer);
+                    }
+                    game.HasTrainer = true;
+                }
+                else
+                {
+                    unmatched.Add(game);
+                }
+            }
+
+            _localList = matchedTrainers.ToList();
+            InstalledGamesCount = _localList.Count;
+
+            Application.Current.Dispatcher.Invoke(() =>
+            {
+                _dataService.SyncDownloadedState(_localList);
+                if (CurrentSection == "local")
+                {
+                    UpdateDisplayedList();
+                }
+                if (_localList.Count > 0)
+                {
+                    StatusMessage = $"已检测到本机 {_localList.Count} 款游戏并匹配修改器";
+                }
+            });
+
+            // Phase 2: 后台在线探针（对离线库未命中的新游戏，向官网发起检索）
+            if (unmatched.Count > 0)
+            {
+                ScanProgressMessage = $"正在为 {unmatched.Count} 款游戏联网探测风灵官网最新修改器...";
+
+                var candidates = unmatched
+                    .Where(g => !string.IsNullOrWhiteSpace(g.Name) && g.Name.Length >= 3)
+                    .Take(15)
+                    .ToList();
+
+                var sem = new SemaphoreSlim(2);
+                var probeTasks = candidates.Select(async candidate =>
+                {
+                    await sem.WaitAsync();
+                    try
+                    {
+                        var onlineHits = await _scraper.SearchOnlineSmartAsync(
+                            candidate.Name,
+                            _dataService.ResolveEnglishName,
+                            _dataService.FindExistingTrainer);
+
+                        if (onlineHits.Count > 0)
+                        {
+                            var best = onlineHits[0];
+                            best.IsLocalInstalled = true;
+                            best.InstalledGamePath = candidate.InstallPath;
+                            var merged = _dataService.MergeOrAdd(best);
+
+                            candidate.HasTrainer = true;
+                            lock (matchedTrainers)
+                            {
+                                if (seenUrls.Add(merged.PageUrl))
+                                {
+                                    matchedTrainers.Insert(0, merged);
+                                }
+                            }
+
+                            Application.Current.Dispatcher.Invoke(() =>
+                            {
+                                _localList = matchedTrainers.ToList();
+                                InstalledGamesCount = _localList.Count;
+                                _dataService.SyncDownloadedState(_localList);
+                                if (CurrentSection == "local")
+                                {
+                                    UpdateDisplayedList();
+                                }
+                                StatusMessage = $"新发现修改器：{merged.GameName}";
+                            });
+                        }
+                        else
+                        {
+                            candidate.Note = "风灵官方暂未收录该游戏修改器";
+                        }
+                    }
+                    catch { }
+                    finally
+                    {
+                        sem.Release();
+                    }
+                });
+
+                await Task.WhenAll(probeTasks);
+            }
+
+            _unmatchedGames = unmatched.Where(x => !x.HasTrainer).ToList();
+            Application.Current.Dispatcher.Invoke(() =>
+            {
+                UnmatchedGameItems = new ObservableCollection<DetectedGame>(_unmatchedGames);
+                HasUnmatchedGames = _unmatchedGames.Count > 0;
+            });
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"扫描本机游戏时出错：{ex.Message}";
+        }
+        finally
+        {
+            IsScanningLocalGames = false;
+            ScanProgressMessage = string.Empty;
+        }
     }
 
     [RelayCommand]
@@ -377,18 +535,10 @@ public partial class MainViewModel : ObservableObject
             item.LocalPath = localExe;
             item.IsDownloaded = true;
 
-            // 自动提取快捷键
-            var (_, options) = TrainerExeParser.Parse(localExe);
-            item.Options = new ObservableCollection<CheatOption>(options);
-
             _dataService.InvalidateDownloadCache();
             _dataService.SyncDownloadedState(DisplayedTrainers);
+            _dataService.SyncDownloadedState(_localList);
             StatusMessage = $"下载完成：{Path.GetFileName(localExe)}";
-
-            if (SelectedTrainer == item)
-            {
-                OnPropertyChanged(nameof(SelectedTrainer));
-            }
         }
         catch (Exception ex)
         {
@@ -466,16 +616,12 @@ public partial class MainViewModel : ObservableObject
             }
 
             // 同步其他视图中的同款修改器状态
+            _dataService.SyncDownloadedState(_localList);
             _dataService.SyncDownloadedState(_hotList);
             _dataService.SyncDownloadedState(_newList);
             if (CurrentSection != "downloaded")
             {
                 _dataService.SyncDownloadedState(DisplayedTrainers);
-            }
-
-            if (SelectedTrainer == item)
-            {
-                OnPropertyChanged(nameof(SelectedTrainer));
             }
 
             StatusMessage = $"已删除「{item.GameName}」修改器";

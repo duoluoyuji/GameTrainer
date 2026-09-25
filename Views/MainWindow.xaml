@@ -175,8 +175,13 @@
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
-                <!-- 左侧：分类 Tab -->
+                <!-- 左侧：分类 Tab 与刷新 -->
                 <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                    <RadioButton Content="{Binding InstalledGamesCount, StringFormat='🎮 本机游戏 ({0})'}" 
+                                 Style="{StaticResource CategoryRadioButton}"
+                                 GroupName="CategoryTabs"
+                                 IsChecked="{Binding IsLocalTab, Mode=OneWay}"
+                                 Command="{Binding SelectSectionCommand}" CommandParameter="local"/>
                     <RadioButton Content="🔥 热门推荐" Style="{StaticResource CategoryRadioButton}"
                                  GroupName="CategoryTabs"
                                  IsChecked="{Binding IsHotTab, Mode=OneWay}"
@@ -189,6 +194,11 @@
                                  GroupName="CategoryTabs"
                                  IsChecked="{Binding IsDownloadedTab, Mode=OneWay}"
                                  Command="{Binding SelectSectionCommand}" CommandParameter="downloaded"/>
+                    <Button Content="🔄 重新扫描本机" Padding="10,5" Margin="8,0,0,0" FontSize="12"
+                            Background="#1A2333" Foreground="#90CAF9" BorderBrush="#253549" BorderThickness="1"
+                            Command="{Binding RescanLocalGamesCommand}"
+                            IsEnabled="{Binding IsScanningLocalGames, Converter={StaticResource BoolInvertConverter}}"
+                            ToolTip="重新深度扫描 Steam、Epic、GOG 等平台并联网匹配修改器"/>
                 </StackPanel>
 
                 <!-- 右侧：视图切换（卡片视图 / 纯列表视图） -->
@@ -207,15 +217,30 @@
             </Grid>
         </Border>
 
-        <!-- 3. 主内容区（双视图模式 + 抽屉详情） -->
+        <!-- 3. 主内容区（双视图模式） -->
         <Grid Grid.Row="2">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="Auto"/>
-            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <!-- 扫描提示条 -->
+                <RowDefinition Height="Auto"/>
+                <!-- 游戏展示区域 -->
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
 
-            <!-- 左侧：卡片列表与空状态 -->
-            <Grid Grid.Column="0">
+            <!-- 扫描状态条 -->
+            <Border Grid.Row="0" Background="#162235" BorderBrush="#25426B" BorderThickness="0,0,0,1" Padding="24,8"
+                    Visibility="{Binding IsScanningLocalGames, Converter={StaticResource BoolToVisibilityConverter}}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <ProgressBar Grid.Column="0" IsIndeterminate="True" Width="18" Height="18" Margin="0,0,10,0" Foreground="#42A5F5"/>
+                    <TextBlock Grid.Column="1" Text="{Binding ScanProgressMessage}" Foreground="#90CAF9" FontSize="12" VerticalAlignment="Center"/>
+                </Grid>
+            </Border>
+
+            <!-- 游戏展示区（卡片 / 列表） -->
+            <Grid Grid.Row="1">
                 <!-- 空结果提醒 -->
                 <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center"
                             Visibility="{Binding IsSearchResultEmpty, Converter={StaticResource BoolToVisibilityConverter}}">
@@ -228,288 +253,283 @@
                 <!-- 模式 A：大卡片海报视图 -->
                 <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="18"
                               Visibility="{Binding IsListView, Converter={StaticResource InvertedBoolToVisibilityConverter}}">
-                    <ItemsControl ItemsSource="{Binding DisplayedTrainers}">
-                        <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate>
-                                <WrapPanel/>
-                            </ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <Border Width="260" Margin="7" Background="#16161D" CornerRadius="10"
-                                        BorderBrush="#242430" BorderThickness="1" ClipToBounds="True">
-                                    <Grid>
-                                        <Grid.RowDefinitions>
-                                            <!-- 封面图 -->
-                                            <RowDefinition Height="114"/>
-                                            <!-- 信息与操作 -->
-                                            <RowDefinition Height="*"/>
-                                        </Grid.RowDefinitions>
-
-                                        <!-- 1. 游戏海报封面 -->
-                                        <Grid Grid.Row="0" Background="#1B222E">
-                                            <Border Background="#1C212B">
-                                                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                                                    <TextBlock Text="🎮" FontSize="26" HorizontalAlignment="Center" Opacity="0.4"/>
-                                                    <TextBlock Text="{Binding OriginalName}" FontSize="10" Foreground="#556677"
-                                                               MaxWidth="220" TextTrimming="CharacterEllipsis" Margin="0,4,0,0"/>
-                                                </StackPanel>
-                                            </Border>
-
-                                            <!-- 异步图片 -->
-                                            <controls:AsyncImage SourceUrl="{Binding CoverUrl}" Stretch="UniformToFill"/>
-
-                                            <!-- 顶部状态角标 -->
-                                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="8">
-                                                <Border Background="#1B5E20" CornerRadius="4" Padding="6,2" Margin="0,0,4,0"
-                                                        Visibility="{Binding IsDownloaded, Converter={StaticResource BoolToVisibilityConverter}}">
-                                                    <TextBlock Text="✅ 已就绪" FontSize="10" Foreground="#C8E6C9" FontWeight="Bold"/>
-                                                </Border>
-                                                <Border Background="#BF360C" CornerRadius="4" Padding="6,2"
-                                                        Visibility="{Binding IsHot, Converter={StaticResource BoolToVisibilityConverter}}">
-                                                    <TextBlock Text="🔥 热门" FontSize="10" Foreground="#FFE0B2" FontWeight="Bold"/>
-                                                </Border>
-                                            </StackPanel>
-                                        </Grid>
-
-                                        <!-- 2. 信息与操作 -->
-                                        <Grid Grid.Row="1" Margin="12">
+                    <StackPanel>
+                        <ItemsControl ItemsSource="{Binding DisplayedTrainers}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Width="260" Margin="7" Background="#16161D" CornerRadius="10"
+                                            BorderBrush="#242430" BorderThickness="1" ClipToBounds="True">
+                                        <Grid>
                                             <Grid.RowDefinitions>
-                                                <RowDefinition Height="Auto"/>
-                                                <RowDefinition Height="Auto"/>
-                                                <RowDefinition Height="Auto"/>
+                                                <!-- 封面图 -->
+                                                <RowDefinition Height="114"/>
+                                                <!-- 信息与操作 -->
+                                                <RowDefinition Height="*"/>
                                             </Grid.RowDefinitions>
 
-                                            <!-- 游戏标题 -->
-                                            <StackPanel Grid.Row="0">
-                                                <TextBlock Text="{Binding GameName}" FontSize="14" FontWeight="Bold" Foreground="#FFFFFF"
-                                                           TextWrapping="Wrap" MaxHeight="40"/>
-                                                <TextBlock Text="{Binding OriginalName}" FontSize="11" Foreground="#7A7A88"
-                                                           TextTrimming="CharacterEllipsis" Margin="0,3,0,10"/>
-                                            </StackPanel>
+                                            <!-- 1. 游戏海报封面 -->
+                                            <Grid Grid.Row="0" Background="#1B222E">
+                                                <Border Background="#1C212B">
+                                                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                        <TextBlock Text="🎮" FontSize="26" HorizontalAlignment="Center" Opacity="0.4"/>
+                                                        <TextBlock Text="{Binding OriginalName}" FontSize="10" Foreground="#556677"
+                                                                   MaxWidth="220" TextTrimming="CharacterEllipsis" Margin="0,4,0,0"/>
+                                                    </StackPanel>
+                                                </Border>
 
-                                            <!-- 下载进度条 -->
-                                            <ProgressBar Grid.Row="1" Height="3" Margin="0,0,0,8"
-                                                         Value="{Binding DownloadProgress}" Maximum="100"
-                                                         Visibility="{Binding IsDownloading, Converter={StaticResource BoolToVisibilityConverter}}"
-                                                         Foreground="#00E676" Background="#242430"/>
+                                                <!-- 异步图片 -->
+                                                <controls:AsyncImage SourceUrl="{Binding CoverUrl}" Stretch="UniformToFill"/>
 
-                                            <!-- 按钮栏 -->
-                                            <Grid Grid.Row="2">
-                                                <!-- 未下载状态：大下载按钮 + 详情 -->
-                                                <Grid Visibility="{Binding IsDownloaded, Converter={StaticResource InvertedBoolToVisibilityConverter}}">
-                                                    <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="*"/>
-                                                        <ColumnDefinition Width="Auto"/>
-                                                    </Grid.ColumnDefinitions>
-                                                    <Button Grid.Column="0" Content="下载修改器" FontWeight="SemiBold" FontSize="12" Padding="0,7" Margin="0,0,6,0"
+                                                <!-- 顶部状态角标 -->
+                                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="8">
+                                                    <!-- 本机已安装 -->
+                                                    <Border Background="#0277BD" CornerRadius="4" Padding="6,2" Margin="0,0,4,0"
+                                                            Visibility="{Binding IsLocalInstalled, Converter={StaticResource BoolToVisibilityConverter}}"
+                                                            ToolTip="{Binding InstalledGamePath, StringFormat='本机路径: {0}'}">
+                                                        <TextBlock Text="💻 本机已安装" FontSize="10" Foreground="#E1F5FE" FontWeight="Bold"/>
+                                                    </Border>
+                                                    <Border Background="#1B5E20" CornerRadius="4" Padding="6,2" Margin="0,0,4,0"
+                                                            Visibility="{Binding IsDownloaded, Converter={StaticResource BoolToVisibilityConverter}}">
+                                                        <TextBlock Text="✅ 已就绪" FontSize="10" Foreground="#C8E6C9" FontWeight="Bold"/>
+                                                    </Border>
+                                                    <Border Background="#BF360C" CornerRadius="4" Padding="6,2"
+                                                            Visibility="{Binding IsHot, Converter={StaticResource BoolToVisibilityConverter}}">
+                                                        <TextBlock Text="🔥 热门" FontSize="10" Foreground="#FFE0B2" FontWeight="Bold"/>
+                                                    </Border>
+                                                </StackPanel>
+                                            </Grid>
+
+                                            <!-- 2. 信息与操作 -->
+                                            <Grid Grid.Row="1" Margin="12">
+                                                <Grid.RowDefinitions>
+                                                    <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="Auto"/>
+                                                </Grid.RowDefinitions>
+
+                                                <!-- 游戏标题 -->
+                                                <StackPanel Grid.Row="0">
+                                                    <TextBlock Text="{Binding GameName}" FontSize="14" FontWeight="Bold" Foreground="#FFFFFF"
+                                                               TextWrapping="Wrap" MaxHeight="40"/>
+                                                    <TextBlock Text="{Binding OriginalName}" FontSize="11" Foreground="#7A7A88"
+                                                               TextTrimming="CharacterEllipsis" Margin="0,3,0,10"/>
+                                                </StackPanel>
+
+                                                <!-- 下载进度条 -->
+                                                <ProgressBar Grid.Row="1" Height="3" Margin="0,0,0,8"
+                                                             Value="{Binding DownloadProgress}" Maximum="100"
+                                                             Visibility="{Binding IsDownloading, Converter={StaticResource BoolToVisibilityConverter}}"
+                                                             Foreground="#00E676" Background="#242430"/>
+
+                                                <!-- 按钮栏 -->
+                                                <Grid Grid.Row="2">
+                                                    <!-- 未下载状态：大下载按钮 -->
+                                                    <Button Content="下载修改器" FontWeight="SemiBold" FontSize="12" Padding="0,7"
                                                             Background="#1976D2" Foreground="#FFFFFF" BorderThickness="0"
+                                                            Visibility="{Binding IsDownloaded, Converter={StaticResource InvertedBoolToVisibilityConverter}}"
                                                             IsEnabled="{Binding IsDownloading, Converter={StaticResource BoolInvertConverter}}"
                                                             Command="{Binding DataContext.DownloadCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                                             CommandParameter="{Binding}"/>
-                                                    <Button Grid.Column="1" Content="热键详情" FontSize="12" Padding="10,7"
-                                                            Background="#22222C" Foreground="#D0D0DC" BorderBrush="#2F2F3D" BorderThickness="1"
-                                                            Command="{Binding DataContext.OpenTrainerDetailsCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                            CommandParameter="{Binding}"/>
-                                                </Grid>
 
-                                                <!-- 已下载状态：【打开修改器】+【删除】+【热键详情】 -->
-                                                <Grid Visibility="{Binding IsDownloaded, Converter={StaticResource BoolToVisibilityConverter}}">
-                                                    <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="*"/>
-                                                        <ColumnDefinition Width="Auto"/>
-                                                        <ColumnDefinition Width="Auto"/>
-                                                    </Grid.ColumnDefinitions>
-                                                    <Button Grid.Column="0" Content="打开修改器" FontWeight="SemiBold" FontSize="12" Padding="0,7" Margin="0,0,4,0"
-                                                            Background="#2E7D32" Foreground="#FFFFFF" BorderThickness="0"
-                                                            Command="{Binding DataContext.LaunchTrainerCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                            CommandParameter="{Binding}"/>
-                                                    <Button Grid.Column="1" Content="删除" FontSize="12" Padding="8,7" Margin="0,0,4,0"
-                                                            Background="#3A1C1C" Foreground="#EF9A9A" BorderThickness="0"
-                                                            Command="{Binding DataContext.DeleteTrainerCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                            CommandParameter="{Binding}"
-                                                            ToolTip="从磁盘中彻底删除此修改器"/>
-                                                    <Button Grid.Column="2" Content="热键" FontSize="12" Padding="8,7"
-                                                            Background="#22222C" Foreground="#D0D0DC" BorderBrush="#2F2F3D" BorderThickness="1"
-                                                            Command="{Binding DataContext.OpenTrainerDetailsCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                            CommandParameter="{Binding}"/>
+                                                    <!-- 已下载状态：【打开修改器】+【删除】 -->
+                                                    <Grid Visibility="{Binding IsDownloaded, Converter={StaticResource BoolToVisibilityConverter}}">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="*"/>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        <Button Grid.Column="0" Content="打开修改器" FontWeight="SemiBold" FontSize="12" Padding="0,7" Margin="0,0,6,0"
+                                                                Background="#2E7D32" Foreground="#FFFFFF" BorderThickness="0"
+                                                                Command="{Binding DataContext.LaunchTrainerCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                CommandParameter="{Binding}"/>
+                                                        <Button Grid.Column="1" Content="删除" FontSize="12" Padding="12,7"
+                                                                Background="#3A1C1C" Foreground="#EF9A9A" BorderThickness="0"
+                                                                Command="{Binding DataContext.DeleteTrainerCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                CommandParameter="{Binding}"
+                                                                ToolTip="从磁盘中彻底删除此修改器"/>
+                                                    </Grid>
                                                 </Grid>
                                             </Grid>
                                         </Grid>
-                                    </Grid>
-                                </Border>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </ScrollViewer>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
 
-                <!-- 模式 B：纯游戏名紧凑列表视图（用户勾选后呈现） -->
-                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="18"
-                              Visibility="{Binding IsListView, Converter={StaticResource BoolToVisibilityConverter}}">
-                    <ItemsControl ItemsSource="{Binding DisplayedTrainers}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <Border Margin="0,0,0,6" Background="#16161D" CornerRadius="8" BorderBrush="#22222D" BorderThickness="1" Padding="14,10">
+                        <!-- 本机未匹配到修改器的其他游戏（折叠区域） -->
+                        <Border Margin="7,20,7,20" Background="#14141B" CornerRadius="8" BorderBrush="#252535" BorderThickness="1" Padding="16"
+                                Visibility="{Binding ShowUnmatchedSection, Converter={StaticResource BoolToVisibilityConverter}}">
+                            <StackPanel>
+                                <Button Command="{Binding ToggleUnmatchedExpandedCommand}" Background="Transparent" BorderThickness="0" HorizontalContentAlignment="Stretch" Cursor="Hand">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="Auto"/>
                                             <ColumnDefinition Width="*"/>
                                             <ColumnDefinition Width="Auto"/>
                                         </Grid.ColumnDefinitions>
-
-                                        <!-- 图标/状态 -->
-                                        <TextBlock Grid.Column="0" Text="🎮" FontSize="18" VerticalAlignment="Center" Margin="0,0,12,0" Opacity="0.8"/>
-
-                                        <!-- 游戏名称 -->
-                                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                            <StackPanel Orientation="Horizontal">
-                                                <TextBlock Text="{Binding GameName}" FontSize="14" FontWeight="Bold" Foreground="#FFFFFF" VerticalAlignment="Center"/>
-                                                <Border Background="#1B5E20" CornerRadius="4" Padding="5,1" Margin="8,0,0,0" VerticalAlignment="Center"
-                                                        Visibility="{Binding IsDownloaded, Converter={StaticResource BoolToVisibilityConverter}}">
-                                                    <TextBlock Text="已就绪" FontSize="10" Foreground="#C8E6C9" FontWeight="Bold"/>
-                                                </Border>
-                                                <Border Background="#BF360C" CornerRadius="4" Padding="5,1" Margin="6,0,0,0" VerticalAlignment="Center"
-                                                        Visibility="{Binding IsHot, Converter={StaticResource BoolToVisibilityConverter}}">
-                                                    <TextBlock Text="热门" FontSize="10" Foreground="#FFE0B2" FontWeight="Bold"/>
-                                                </Border>
-                                            </StackPanel>
-                                            <TextBlock Text="{Binding OriginalName}" FontSize="11" Foreground="#7A7A88" Margin="0,2,0,0"/>
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                            <TextBlock Text="🔍 本机检测到的其他游戏 (暂未匹配到修改器)" FontWeight="SemiBold" FontSize="13" Foreground="#9999AA"/>
+                                            <Border Background="#252535" CornerRadius="10" Padding="8,1" Margin="8,0,0,0">
+                                                <TextBlock Text="{Binding UnmatchedGameItems.Count, StringFormat='共 {0} 款'}" FontSize="11" Foreground="#888899"/>
+                                            </Border>
                                         </StackPanel>
-
-                                        <!-- 右侧操作栏 -->
-                                        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                                            <!-- 未下载：下载 + 热键 -->
-                                            <Button Content="下载修改器" FontSize="12" Padding="14,6" Margin="0,0,8,0"
-                                                    Background="#1976D2" Foreground="#FFFFFF" BorderThickness="0"
-                                                    Visibility="{Binding IsDownloaded, Converter={StaticResource InvertedBoolToVisibilityConverter}}"
-                                                    IsEnabled="{Binding IsDownloading, Converter={StaticResource BoolInvertConverter}}"
-                                                    Command="{Binding DataContext.DownloadCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                    CommandParameter="{Binding}"/>
-
-                                            <!-- 已下载：打开 + 删除 -->
-                                            <Button Content="打开修改器" FontSize="12" FontWeight="Bold" Padding="14,6" Margin="0,0,6,0"
-                                                    Background="#2E7D32" Foreground="#FFFFFF" BorderThickness="0"
-                                                    Visibility="{Binding IsDownloaded, Converter={StaticResource BoolToVisibilityConverter}}"
-                                                    Command="{Binding DataContext.LaunchTrainerCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                    CommandParameter="{Binding}"/>
-                                            <Button Content="删除" FontSize="12" Padding="10,6" Margin="0,0,6,0"
-                                                    Background="#3A1C1C" Foreground="#EF9A9A" BorderThickness="0"
-                                                    Visibility="{Binding IsDownloaded, Converter={StaticResource BoolToVisibilityConverter}}"
-                                                    Command="{Binding DataContext.DeleteTrainerCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                    CommandParameter="{Binding}"/>
-
-                                            <Button Content="热键详情" FontSize="12" Padding="10,6"
-                                                    Background="#22222C" Foreground="#D0D0DC" BorderBrush="#2F2F3D" BorderThickness="1"
-                                                    Command="{Binding DataContext.OpenTrainerDetailsCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                    CommandParameter="{Binding}"/>
-                                        </StackPanel>
+                                        <Grid Grid.Column="1">
+                                            <TextBlock Text="▼ 点击展开查看" FontSize="12" Foreground="#7986CB"
+                                                       Visibility="{Binding IsUnmatchedExpanded, Converter={StaticResource InvertedBoolToVisibilityConverter}}"/>
+                                            <TextBlock Text="▲ 点击收起" FontSize="12" Foreground="#7986CB"
+                                                       Visibility="{Binding IsUnmatchedExpanded, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                                        </Grid>
                                     </Grid>
-                                </Border>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
+                                </Button>
+
+                                <ItemsControl ItemsSource="{Binding UnmatchedGameItems}" Margin="0,14,0,0"
+                                              Visibility="{Binding IsUnmatchedExpanded, Converter={StaticResource BoolToVisibilityConverter}}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Margin="0,0,0,6" Background="#1A1A24" CornerRadius="6" Padding="12,8">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <StackPanel Grid.Column="0">
+                                                        <TextBlock Text="{Binding Name}" FontSize="13" FontWeight="SemiBold" Foreground="#CCCCCC"/>
+                                                        <TextBlock Text="{Binding InstallPath}" FontSize="11" Foreground="#666677" Margin="0,2,0,0" TextTrimming="CharacterEllipsis"/>
+                                                    </StackPanel>
+                                                    <Border Grid.Column="1" Background="#242435" CornerRadius="4" Padding="6,2" VerticalAlignment="Center" Margin="8,0,0,0">
+                                                        <TextBlock Text="{Binding Source}" FontSize="10" Foreground="#888899"/>
+                                                    </Border>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <!-- 模式 B：纯游戏名紧凑列表视图 -->
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="18"
+                              Visibility="{Binding IsListView, Converter={StaticResource BoolToVisibilityConverter}}">
+                    <StackPanel>
+                        <ItemsControl ItemsSource="{Binding DisplayedTrainers}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Margin="0,0,0,6" Background="#16161D" CornerRadius="8" BorderBrush="#22222D" BorderThickness="1" Padding="14,10">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+
+                                            <!-- 图标/状态 -->
+                                            <TextBlock Grid.Column="0" Text="🎮" FontSize="18" VerticalAlignment="Center" Margin="0,0,12,0" Opacity="0.8"/>
+
+                                            <!-- 游戏名称 -->
+                                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock Text="{Binding GameName}" FontSize="14" FontWeight="Bold" Foreground="#FFFFFF" VerticalAlignment="Center"/>
+                                                    <Border Background="#0277BD" CornerRadius="4" Padding="5,1" Margin="8,0,0,0" VerticalAlignment="Center"
+                                                            Visibility="{Binding IsLocalInstalled, Converter={StaticResource BoolToVisibilityConverter}}">
+                                                        <TextBlock Text="本机已安装" FontSize="10" Foreground="#E1F5FE" FontWeight="Bold"/>
+                                                    </Border>
+                                                    <Border Background="#1B5E20" CornerRadius="4" Padding="5,1" Margin="6,0,0,0" VerticalAlignment="Center"
+                                                            Visibility="{Binding IsDownloaded, Converter={StaticResource BoolToVisibilityConverter}}">
+                                                        <TextBlock Text="已就绪" FontSize="10" Foreground="#C8E6C9" FontWeight="Bold"/>
+                                                    </Border>
+                                                    <Border Background="#BF360C" CornerRadius="4" Padding="5,1" Margin="6,0,0,0" VerticalAlignment="Center"
+                                                            Visibility="{Binding IsHot, Converter={StaticResource BoolToVisibilityConverter}}">
+                                                        <TextBlock Text="热门" FontSize="10" Foreground="#FFE0B2" FontWeight="Bold"/>
+                                                    </Border>
+                                                </StackPanel>
+                                                <TextBlock Text="{Binding OriginalName}" FontSize="11" Foreground="#7A7A88" Margin="0,2,0,0"/>
+                                            </StackPanel>
+
+                                            <!-- 右侧操作栏 -->
+                                            <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                                                <!-- 未下载：下载 -->
+                                                <Button Content="下载修改器" FontSize="12" Padding="14,6"
+                                                        Background="#1976D2" Foreground="#FFFFFF" BorderThickness="0"
+                                                        Visibility="{Binding IsDownloaded, Converter={StaticResource InvertedBoolToVisibilityConverter}}"
+                                                        IsEnabled="{Binding IsDownloading, Converter={StaticResource BoolInvertConverter}}"
+                                                        Command="{Binding DataContext.DownloadCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                        CommandParameter="{Binding}"/>
+
+                                                <!-- 已下载：打开 + 删除 -->
+                                                <Button Content="打开修改器" FontSize="12" FontWeight="Bold" Padding="14,6" Margin="0,0,6,0"
+                                                        Background="#2E7D32" Foreground="#FFFFFF" BorderThickness="0"
+                                                        Visibility="{Binding IsDownloaded, Converter={StaticResource BoolToVisibilityConverter}}"
+                                                        Command="{Binding DataContext.LaunchTrainerCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                        CommandParameter="{Binding}"/>
+                                                <Button Content="删除" FontSize="12" Padding="10,6"
+                                                        Background="#3A1C1C" Foreground="#EF9A9A" BorderThickness="0"
+                                                        Visibility="{Binding IsDownloaded, Converter={StaticResource BoolToVisibilityConverter}}"
+                                                        Command="{Binding DataContext.DeleteTrainerCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                        CommandParameter="{Binding}"/>
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <!-- 本机未匹配到修改器的其他游戏（列表视图下的折叠区域） -->
+                        <Border Margin="0,16,0,10" Background="#14141B" CornerRadius="8" BorderBrush="#252535" BorderThickness="1" Padding="16"
+                                Visibility="{Binding ShowUnmatchedSection, Converter={StaticResource BoolToVisibilityConverter}}">
+                            <StackPanel>
+                                <Button Command="{Binding ToggleUnmatchedExpandedCommand}" Background="Transparent" BorderThickness="0" HorizontalContentAlignment="Stretch" Cursor="Hand">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                            <TextBlock Text="🔍 本机检测到的其他游戏 (暂未匹配到修改器)" FontWeight="SemiBold" FontSize="13" Foreground="#9999AA"/>
+                                            <Border Background="#252535" CornerRadius="10" Padding="8,1" Margin="8,0,0,0">
+                                                <TextBlock Text="{Binding UnmatchedGameItems.Count, StringFormat='共 {0} 款'}" FontSize="11" Foreground="#888899"/>
+                                            </Border>
+                                        </StackPanel>
+                                        <Grid Grid.Column="1">
+                                            <TextBlock Text="▼ 点击展开查看" FontSize="12" Foreground="#7986CB"
+                                                       Visibility="{Binding IsUnmatchedExpanded, Converter={StaticResource InvertedBoolToVisibilityConverter}}"/>
+                                            <TextBlock Text="▲ 点击收起" FontSize="12" Foreground="#7986CB"
+                                                       Visibility="{Binding IsUnmatchedExpanded, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                                        </Grid>
+                                    </Grid>
+                                </Button>
+
+                                <ItemsControl ItemsSource="{Binding UnmatchedGameItems}" Margin="0,14,0,0"
+                                              Visibility="{Binding IsUnmatchedExpanded, Converter={StaticResource BoolToVisibilityConverter}}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Margin="0,0,0,6" Background="#1A1A24" CornerRadius="6" Padding="12,8">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <StackPanel Grid.Column="0">
+                                                        <TextBlock Text="{Binding Name}" FontSize="13" FontWeight="SemiBold" Foreground="#CCCCCC"/>
+                                                        <TextBlock Text="{Binding InstallPath}" FontSize="11" Foreground="#666677" Margin="0,2,0,0" TextTrimming="CharacterEllipsis"/>
+                                                    </StackPanel>
+                                                    <Border Grid.Column="1" Background="#242435" CornerRadius="4" Padding="6,2" VerticalAlignment="Center" Margin="8,0,0,0">
+                                                        <TextBlock Text="{Binding Source}" FontSize="10" Foreground="#888899"/>
+                                                    </Border>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
                 </ScrollViewer>
             </Grid>
-
-            <!-- 右侧：修改器详情抽屉 -->
-            <Border Grid.Column="1" Width="360" Background="#131319" BorderBrush="#22222E" BorderThickness="1,0,0,0"
-                    Visibility="{Binding IsDrawerOpen, Converter={StaticResource BoolToVisibilityConverter}}">
-                <Grid Margin="18">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
-                        <RowDefinition Height="Auto"/>
-                    </Grid.RowDefinitions>
-
-                    <!-- 抽屉顶部标题与关闭按钮 -->
-                    <Grid Grid.Row="0" Margin="0,0,0,16">
-                        <TextBlock Text="修改器详情" FontSize="16" FontWeight="Bold" Foreground="#FFFFFF" VerticalAlignment="Center"/>
-                        <Button Content="✕" HorizontalAlignment="Right" Background="Transparent" Foreground="#888888" BorderThickness="0"
-                                FontSize="14" Padding="6" Command="{Binding CloseDrawerCommand}"/>
-                    </Grid>
-
-                    <!-- 游戏基础信息 -->
-                    <Border Grid.Row="1" Background="#1A1A22" CornerRadius="8" Padding="12" Margin="0,0,0,14">
-                        <StackPanel>
-                            <TextBlock Text="{Binding SelectedTrainer.GameName}" FontSize="15" FontWeight="Bold" Foreground="#FFFFFF" TextWrapping="Wrap"/>
-                            <TextBlock Text="{Binding SelectedTrainer.OriginalName}" FontSize="12" Foreground="#888899" Margin="0,2,0,8"/>
-                            <TextBlock Text="{Binding SelectedTrainer.LocalPath}" FontSize="11" Foreground="#66BB6A" TextWrapping="Wrap"
-                                       Visibility="{Binding SelectedTrainer.IsDownloaded, Converter={StaticResource BoolToVisibilityConverter}}"/>
-                            <TextBlock Text="未下载（下载后可直接提取查看按键清单）" FontSize="11" Foreground="#FFA726"
-                                       Visibility="{Binding SelectedTrainer.IsDownloaded, Converter={StaticResource InvertedBoolToVisibilityConverter}}"/>
-                        </StackPanel>
-                    </Border>
-
-                    <!-- 作弊热键清单 -->
-                    <Grid Grid.Row="2">
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*"/>
-                        </Grid.RowDefinitions>
-                        <TextBlock Grid.Row="0" Text="📋 作弊功能与快捷键清单" FontSize="13" FontWeight="SemiBold" Foreground="#9090A0" Margin="0,0,0,8"/>
-
-                        <!-- 有热键列表时展示 -->
-                        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
-                            <ItemsControl ItemsSource="{Binding SelectedTrainer.Options}">
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                        <Border Background="#1A1A24" CornerRadius="6" Padding="10,6" Margin="0,0,0,6">
-                                            <Grid>
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                    <ColumnDefinition Width="*"/>
-                                                </Grid.ColumnDefinitions>
-                                                <Border Background="#243447" CornerRadius="4" Padding="6,2" Margin="0,0,8,0">
-                                                    <TextBlock Text="{Binding DisplayKey}" FontSize="11" FontWeight="Bold" Foreground="#64B5F6"/>
-                                                </Border>
-                                                <TextBlock Grid.Column="1" Text="{Binding Description}" FontSize="12" Foreground="#E0E0E0" VerticalAlignment="Center"/>
-                                            </Grid>
-                                        </Border>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                        </ScrollViewer>
-
-                        <!-- 无热键列表且未下载时的引导提示 -->
-                        <StackPanel Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center"
-                                    Visibility="{Binding SelectedTrainer.IsDownloaded, Converter={StaticResource InvertedBoolToVisibilityConverter}}">
-                            <TextBlock Text="⚡" FontSize="36" HorizontalAlignment="Center" Margin="0,0,0,10"/>
-                            <TextBlock Text="点击下方「立即下载修改器」" FontSize="13" FontWeight="SemiBold" Foreground="#FFFFFF" HorizontalAlignment="Center"/>
-                            <TextBlock Text="下载完成后，软件将自动解析出该修改器支持的全部快捷键与作弊功能清单"
-                                       FontSize="11" Foreground="#888888" TextWrapping="Wrap" TextAlignment="Center" MaxWidth="240" Margin="0,6,0,0"/>
-                        </StackPanel>
-                    </Grid>
-
-                    <!-- 抽屉底部快捷按钮 -->
-                    <StackPanel Grid.Row="3" Margin="0,14,0,0">
-                        <Button Content="打开运行修改器" Padding="0,10" FontWeight="Bold" FontSize="13"
-                                Background="#2E7D32" Foreground="#FFFFFF" BorderThickness="0" Margin="0,0,0,8"
-                                Visibility="{Binding SelectedTrainer.IsDownloaded, Converter={StaticResource BoolToVisibilityConverter}}"
-                                Command="{Binding LaunchTrainerCommand}" CommandParameter="{Binding SelectedTrainer}"/>
-
-                        <Button Content="立即下载修改器" Padding="0,10" FontWeight="Bold" FontSize="13"
-                                Background="#1976D2" Foreground="#FFFFFF" BorderThickness="0" Margin="0,0,0,8"
-                                Visibility="{Binding SelectedTrainer.IsDownloaded, Converter={StaticResource InvertedBoolToVisibilityConverter}}"
-                                IsEnabled="{Binding SelectedTrainer.IsDownloading, Converter={StaticResource BoolInvertConverter}}"
-                                Command="{Binding DownloadCommand}" CommandParameter="{Binding SelectedTrainer}"/>
-
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <Button Grid.Column="0" Content="官网页面" Padding="0,6" FontSize="11" Margin="0,0,4,0"
-                                    Background="#1F1F28" Foreground="#AAAAAA" BorderThickness="0"
-                                    Command="{Binding OpenTrainerOfficialPageCommand}" CommandParameter="{Binding SelectedTrainer}"/>
-                            <Button Grid.Column="1" Content="删除修改器" Padding="0,6" FontSize="11" Margin="4,0,0,0"
-                                    Background="#3A1C1C" Foreground="#EF9A9A" BorderThickness="0"
-                                    Visibility="{Binding SelectedTrainer.IsDownloaded, Converter={StaticResource BoolToVisibilityConverter}}"
-                                    Command="{Binding DeleteTrainerCommand}" CommandParameter="{Binding SelectedTrainer}"/>
-                        </Grid>
-                    </StackPanel>
-                </Grid>
-            </Border>
         </Grid>
 
         <!-- 4. 底部状态栏 -->
